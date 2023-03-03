@@ -4,7 +4,5 @@ head
 	author Marko Petrlic
 body
 	paragraph Welcome to My world
-	button Start Node
-		click /stopnode
-	button Stop Node
-		click /startnode
+	button Refresh
+		click /refresh
