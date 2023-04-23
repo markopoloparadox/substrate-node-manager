@@ -1,43 +1,43 @@
+mod node;
 mod os;
 
 use axum::{extract::State as AxumState, response::Html as AxumHtml, routing::get, Router};
+use node::{Node, NodeManager};
 use os::*;
 use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
-
-/* pub fn total_system_utilization() -> (u32, u32) {
-    let arg =
-    let out = Command::new("sh").args(["-c"])
-        .arg("-c")
-        .arg("pidof seed")
-        .output()
-        .unwrap();
-}
-
-pub fn get_pid_of(name: &str) -> (Option<u32>, Option<String>) {
-    let out = Command::new("sh")
-        .arg("-c")
-        .arg("pidof seed")
-        .output()
-        .unwrap();
-    let format = format_command_output(out);
-    let mut pid = None;
-    if let Some(p) = format.0 {
-        pid = Some(p.parse().unwrap());
-    }
-    (pid, format.1)
-}
-
-pub fn get_node_health(pid: u32) -> (Option<String>, Option<String>) {
-    let arg = format!("ps -p {pid:} -o %cpu,%mem -h");
-    let out = Command::new("sh").arg("-c").arg(arg).output().unwrap();
-    format_command_output(out)
-} */
+use tokio::{task, time};
 
 pub struct AxumSharedData {
     pub os: OperatingSystem,
+    pub node: Node,
+    pub node_manager: NodeManager,
+}
+
+impl AxumSharedData {
+    pub fn new() -> Self {
+        Self {
+            os: OperatingSystem::new(),
+            node: Node::new(),
+            node_manager: NodeManager::default(),
+        }
+    }
+
+    pub fn refresh(&mut self) {
+        self.os.refresh();
+        self.node.refresh(&self.os);
+    }
+
+    pub fn stop_node(&mut self) -> Result<String, String> {
+        self.node_manager.stop_node(&self.node)
+    }
+
+    pub fn start_node(&mut self) -> Result<String, String> {
+        self.node_manager.start_node(&self.node)
+    }
 }
 
 pub type State = AxumState<Arc<Mutex<AxumSharedData>>>;
@@ -46,15 +46,26 @@ pub type State = AxumState<Arc<Mutex<AxumSharedData>>>;
 async fn main() {
     println!("Hello World!");
 
-    let axum_data = AxumSharedData {
-        os: OperatingSystem::new(),
-    };
-    let state = Arc::new(Mutex::from(axum_data));
+    let state = Arc::new(Mutex::from(AxumSharedData::new()));
+    let a = state.clone();
+
+    let forever = task::spawn(async move {
+        let mut interval = time::interval(Duration::from_millis(250));
+        println!("Hello");
+
+        loop {
+            interval.tick().await;
+            if let Ok(mut state) = a.lock() {
+                state.refresh();
+            }
+        }
+    });
 
     let app = Router::new()
         .route("/", get(root))
-        /*         .route("/action", get(action))
-        .route("/refresh", get(refresh)) */
+        .route("/start", get(start_node))
+        .route("/stop", get(stop_node))
+        .route("/log", get(get_log))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -62,29 +73,41 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+
+    _ = forever.await;
 }
 
 // basic handler that responds with a static string
 async fn root(state: State) -> AxumHtml<String> {
-    let mut state = state.lock().unwrap();
-    state.os.refresh();
-
-    AxumHtml(state.os.serialize())
+    let state = state.lock().unwrap();
+    AxumHtml(state.node.serialize())
 }
 
-/* // basic handler that responds with a static string
-async fn action(state: State<bool>) {
-    dbg!("Hello World!");
+async fn start_node(state: State) -> AxumHtml<String> {
+    println!("/start Endpoint");
     let mut state = state.lock().unwrap();
-    state.refresh = true;
+    AxumHtml(match state.start_node() {
+        Ok(x) => x,
+        Err(x) => x,
+    })
+}
+
+async fn stop_node(state: State) -> AxumHtml<String> {
+    println!("/stop Endpoint");
+    let mut state = state.lock().unwrap();
+    AxumHtml(match state.stop_node() {
+        Ok(x) => x,
+        Err(x) => x,
+    })
 }
 
 // basic handler that responds with a static string
-async fn refresh(state: State<bool>) -> Json<bool> {
-    let mut state = state.lock().unwrap();
-    let refresh = state.refresh;
-    dbg!(state.refresh);
-    state.refresh = false;
-    Json::from(refresh)
+async fn get_log(state: State) -> AxumHtml<String> {
+    println!("/log Endpoint");
+    let res = std::fs::read_to_string("/home/marko/Projects/centrality/seed/stderr_log.txt");
+    let Ok(res) = res else {
+        return AxumHtml(String::from("Error"));
+    };
+
+    AxumHtml(res)
 }
- */

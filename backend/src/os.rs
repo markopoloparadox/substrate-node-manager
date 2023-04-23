@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sysinfo::{CpuExt, DiskExt, System, SystemExt};
+use sysinfo::{CpuExt, DiskExt, ProcessExt, System, SystemExt};
 
 #[derive(Debug, Default, Clone, Copy, Serialize)]
 pub struct Memory {
@@ -163,6 +163,25 @@ impl Components {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct ProcessInformation {
+    pub name: String,
+    pub pid: usize,
+    pub memory: u64,
+    pub run_time: u64,
+}
+
+impl ProcessInformation {
+    pub fn new(proc: &sysinfo::Process) -> Self {
+        Self {
+            name: proc.name().to_owned(),
+            pid: proc.pid().into(),
+            memory: proc.memory(),
+            run_time: proc.run_time(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct OperatingSystem {
     sys: sysinfo::System,
@@ -183,7 +202,16 @@ impl OperatingSystem {
         self.comp.read(&self.sys);
     }
 
-    pub fn serialize(&self) -> String {
+    pub fn serialize_system_information(&self) -> String {
         serde_json::to_string(&self.comp).unwrap()
+    }
+
+    pub fn process_information(&self, process_name: &String) -> Option<ProcessInformation> {
+        let procs = self.sys.processes_by_exact_name(process_name);
+        let Some(proc) = procs.last() else {
+            return None;
+        };
+
+        return Some(ProcessInformation::new(proc));
     }
 }
