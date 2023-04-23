@@ -79,8 +79,8 @@ async fn main() {
 
 // basic handler that responds with a static string
 async fn root(state: State) -> AxumHtml<String> {
-    let state = state.lock().unwrap();
-    AxumHtml(state.node.serialize())
+    let state: std::sync::MutexGuard<AxumSharedData> = state.lock().unwrap();
+    AxumHtml(state.os.serialize_system_information())
 }
 
 async fn start_node(state: State) -> AxumHtml<String> {
